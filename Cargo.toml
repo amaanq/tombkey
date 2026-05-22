@@ -1,0 +1,80 @@
+[package]
+name         = "tombkey"
+version      = "0.1.0"
+authors      = [ "Amaan Qureshi <contact@amaanq.com>" ]
+edition      = "2024"
+rust-version = "1.95.0"
+description  = "Re-encrypt age secrets to per-host pubkeys"
+license      = "MIT"
+repository   = "https://github.com/amaanq/tombkey"
+readme       = "README.md"
+keywords     = [ "age", "encryption", "nixos", "secrets" ]
+categories   = [ "command-line-utilities", "cryptography" ]
+
+[dependencies]
+age                = { features = [ "armor", "cli-common", "plugin", "ssh" ], version = "0.11.3" }
+age-core           = "0.11.0"
+clap               = { features = [ "cargo", "derive", "env" ], version = "4.6.1" }
+hex                = "0.4.3"
+region             = "3.0.2"
+secrecy            = "0.10.3"
+serde              = { features = [ "derive" ], version = "1.0.228" }
+serde_json         = "1.0.149"
+sha2               = "0.11.0"
+tempfile           = "3.27.0"
+thiserror          = "2.0.18"
+tracing            = "0.1.44"
+tracing-subscriber = { features = [ "env-filter" ], version = "0.3.23" }
+zeroize            = { features = [ "derive" ], version = "1.8.2" }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2.186"
+nix  = { features = [ "signal" ], version = "0.31.3" }
+
+[dev-dependencies]
+age = { features = [ "armor", "plugin" ], version = "0.11.3" }
+
+[profile.release]
+lto   = "thin"
+strip = true
+
+[lints.clippy]
+cargo    = { level = "warn", priority = -1 }
+nursery  = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+
+blanket_clippy_restriction_lints = "allow"
+restriction                      = { level = "warn", priority = -1 }
+
+arbitrary_source_item_ordering = "allow"
+arithmetic_side_effects        = "allow"
+as_conversions                 = "allow"
+error_impl_error               = "allow"
+exhaustive_enums               = "allow"
+exhaustive_structs             = "allow"
+expect_used                    = "allow"
+implicit_return                = "allow"
+indexing_slicing               = "allow"
+inline_modules                 = "allow"
+let_underscore_must_use        = "allow"
+let_underscore_untyped         = "allow"
+map_err_ignore                 = "allow"
+missing_asserts_for_indexing   = "allow"
+missing_docs_in_private_items  = "allow"
+missing_errors_doc             = "allow"
+missing_inline_in_public_items = "allow"
+missing_trait_methods          = "allow"
+mod_module_files               = "allow"
+module_name_repetitions        = "allow"
+multiple_crate_versions        = "allow"
+needless_borrowed_reference    = "allow"
+question_mark_used             = "allow"
+ref_patterns                   = "allow"
+semicolon_outside_block        = "allow"
+separated_literal_suffix       = "allow"
+single_call_fn                 = "allow"
+single_char_lifetime_names     = "allow"
+std_instead_of_alloc           = "allow"
+std_instead_of_core            = "allow"
+tests_outside_test_module      = "allow"
+unwrap_used                    = "allow"
