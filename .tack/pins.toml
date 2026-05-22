@@ -1,0 +1,13 @@
+# tack pins. edit by hand or with tack add / rm / alias
+# nix reads pins.lock.json; this file drives tack update
+
+[tack]
+recomposable = true
+
+[inputs.nixpkgs]
+url = "github:nixos/nixpkgs/nixpkgs-unstable"
+
+# nightly rust, used when fenix publishes for the host system
+[inputs.fenix]
+follows = { nixpkgs = "nixpkgs" }
+url     = "github:nix-community/fenix"
