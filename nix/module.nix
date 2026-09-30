@@ -56,7 +56,7 @@ let
     in
     assert assertMsg (builtins.pathExists rekeyedPath) ''
       host ${hostName}: rekeyed secret for ${name} not found at ${toString rekeyedPath}.
-      Run `nix run .#rekey` and commit the result.
+      Run `tombkey rekey` and commit the result.
     '';
     rekeyedPath;
 

@@ -97,7 +97,12 @@ pub fn run(plans: &[Plan], repo_root: &Path, manifest_path: &Path) -> Result<usi
       let source_bytes = match fs::read(source_path) {
          Ok(bytes) => bytes,
          Err(err) => {
-            warn!(source = %source_path.display(), error = %err, "read source failed");
+            if err.kind() == ErrorKind::NotFound {
+               let relative = consumers[0].1.rekey_file.display();
+               warn!("{relative} does not exist, create it with `tombkey edit {relative}`");
+            } else {
+               warn!(source = %source_path.display(), error = %err, "read source failed");
+            }
             for &(_, secret) in consumers {
                record_secret_failure(secret, repo_root, &mut report);
             }
