@@ -38,14 +38,23 @@ use crate::{
 const CONFIG_ATTRS: [&str; 2] = ["nixosConfigurations", "darwinConfigurations"];
 
 /// Disabled hosts evaluate to `null` rather than an error.
-const HOST_APPLY: &str = "cfg: if cfg.config.age.tombkey.enable or false then { plan = \
-                          cfg.config.age.tombkey.planData; system = \
-                          cfg.pkgs.stdenv.hostPlatform.system; } else null";
+const HOST_APPLY: &str = "cfg: let tk = cfg.config.age.tombkey; in if tk.enable or false then { \
+                          plan = tk.planData; system = cfg.pkgs.stdenv.hostPlatform.system; \
+                          plugins = map (pkg: { dir = \"${pkg}/bin\"; drv = pkg.drvPath; }) \
+                          tk.agePlugins; } else null";
 
 #[derive(Deserialize)]
 struct HostEval {
-   plan:   serde_json::Value,
-   system: String,
+   plan:    serde_json::Value,
+   system:  String,
+   plugins: Vec<PluginEval>,
+}
+
+/// `drv` lets a plugin missing from every cache still be built locally.
+#[derive(Deserialize, Clone, PartialEq, Eq, PartialOrd, Ord)]
+struct PluginEval {
+   dir: PathBuf,
+   drv: PathBuf,
 }
 
 pub fn discover(repo_root: &Path, jobs: Option<usize>, impure: bool) -> Result<Vec<Plan>> {
@@ -113,14 +122,14 @@ pub fn discover(repo_root: &Path, jobs: Option<usize>, impure: bool) -> Result<V
    }
 
    let mut plans = Vec::with_capacity(evals.len());
-   let plugin_dirs = plugin_union(&evals);
+   let plugins = plugin_union(&evals);
    for eval in evals {
       let bytes = serde_json::to_vec(&eval.plan)?;
       let mut plan = Plan::from_json(&bytes)?;
-      plan.age_plugins = plugin_dirs.iter().cloned().collect();
+      plan.age_plugins = plugins.iter().map(|plugin| plugin.dir.clone()).collect();
       plans.push(plan);
    }
-   realise_missing(&plugin_dirs)?;
+   realise_missing(&plugins)?;
    Ok(plans)
 }
 
@@ -187,21 +196,17 @@ fn eval_host(flake: &str, attr: &str, host: &str, impure: bool) -> Result<Option
 
 /// Plugins run on this machine, so every plan gets the local system's union of
 /// plugin dirs.
-fn plugin_union(evals: &[HostEval]) -> BTreeSet<PathBuf> {
+fn plugin_union(evals: &[HostEval]) -> BTreeSet<PluginEval> {
    let system = current_system();
-   let dirs: BTreeSet<PathBuf> = evals
+   let plugins: BTreeSet<PluginEval> = evals
       .iter()
       .filter(|eval| eval.system == system)
-      .filter_map(|eval| eval.plan.get("age_plugins"))
-      .filter_map(|dirs| dirs.as_array())
-      .flatten()
-      .filter_map(|dir| dir.as_str())
-      .map(PathBuf::from)
+      .flat_map(|eval| eval.plugins.iter().cloned())
       .collect();
-   if dirs.is_empty() {
+   if plugins.is_empty() {
       warn!("no {system} host contributes age plugin dirs; plugin recipients may fail");
    }
-   dirs
+   plugins
 }
 
 fn current_system() -> String {
@@ -213,31 +218,26 @@ fn current_system() -> String {
    format!("{}-{os}", consts::ARCH)
 }
 
-/// `nix eval` hands back plugin paths as bare strings, so substitute any that
-/// aren't in the store.
-fn realise_missing(dirs: &BTreeSet<PathBuf>) -> Result<()> {
-   let missing: Vec<&Path> = dirs
+/// Substitutes missing plugins, or builds them when no cache has them.
+fn realise_missing(plugins: &BTreeSet<PluginEval>) -> Result<()> {
+   let missing: Vec<String> = plugins
       .iter()
-      .map(PathBuf::as_path)
-      .filter(|dir| !dir.exists())
+      .filter(|plugin| !plugin.dir.exists())
+      .map(|plugin| format!("{}^*", plugin.drv.display()))
       .collect();
    if missing.is_empty() {
       return Ok(());
    }
-   let status = Command::new("nix-store")
-      .arg("--realise")
+   info!("realising {} missing age plugin(s)", missing.len());
+   let status = Command::new("nix")
+      .args(["build", "--no-link"])
       .args(&missing)
       .status()
-      .map_err(|err| Error::Discover(format!("spawn nix-store: {err}")))?;
+      .map_err(|err| Error::Discover(format!("spawn nix build: {err}")))?;
    if !status.success() {
       return Err(Error::Discover(format!(
-         "age plugin dirs are not in the store and could not be substituted: {}; build or switch \
-          to the current configuration first",
-         missing
-            .iter()
-            .map(|dir| dir.display().to_string())
-            .collect::<Vec<_>>()
-            .join(", "),
+         "failed to realise age plugins: {}",
+         missing.join(", ")
       )));
    }
    Ok(())
@@ -255,10 +255,19 @@ fn tail(text: &str) -> String {
 mod tests {
    use super::*;
 
-   fn eval(system: &str, plugins: &[&str]) -> HostEval {
+   fn eval(system: &str, dirs: &[&str]) -> HostEval {
       HostEval {
-         plan:   serde_json::json!({ "age_plugins": plugins }),
-         system: system.into(),
+         plan:    serde_json::Value::Null,
+         system:  system.into(),
+         plugins: dirs
+            .iter()
+            .map(|dir| {
+               PluginEval {
+                  dir: dir.into(),
+                  drv: format!("{dir}.drv").into(),
+               }
+            })
+            .collect(),
       }
    }
 
@@ -270,7 +279,10 @@ mod tests {
          eval(&system, &["/nix/store/b", "/nix/store/c"]),
          eval("other-system", &["/nix/store/foreign"]),
       ];
-      let dirs = plugin_union(&evals);
+      let dirs: BTreeSet<PathBuf> = plugin_union(&evals)
+         .into_iter()
+         .map(|plugin| plugin.dir)
+         .collect();
       let expected: BTreeSet<PathBuf> = ["/nix/store/a", "/nix/store/b", "/nix/store/c"]
          .iter()
          .map(PathBuf::from)
