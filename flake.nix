@@ -157,7 +157,7 @@
             packages = [
               pkgs.nixfmt
               pkgs.pkg-config
-              pkgs.taplo
+              pkgs.tombi
               toolchain
             ]
             ++ optionals (hasWild pkgs.stdenv.hostPlatform) [

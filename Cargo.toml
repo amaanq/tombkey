@@ -1,42 +1,44 @@
 [package]
 name         = "tombkey"
 version      = "0.1.0"
-authors      = [ "Amaan Qureshi <contact@amaanq.com>" ]
 edition      = "2024"
 rust-version = "1.95.0"
 description  = "Re-encrypt age secrets to per-host pubkeys"
-license      = "MIT"
 repository   = "https://github.com/amaanq/tombkey"
-readme       = "README.md"
+license      = "MIT"
 keywords     = [ "age", "encryption", "nixos", "secrets" ]
 categories   = [ "command-line-utilities", "cryptography" ]
 
 [dependencies]
-age                = { features = [ "armor", "cli-common", "plugin", "ssh" ], version = "0.12.1" }
+age                = {
+  version  = "0.12.1",
+  features = [
+    "armor",
+    "cli-common",
+    "plugin",
+    "ssh",
+  ]
+}
 age-core           = "0.12.0"
 flub               = "0.1.0"
 hex                = "0.4.3"
 pound              = "0.6.1"
 region             = "4.0.1"
 secrecy            = "0.10.3"
-serde              = { features = [ "derive" ], version = "1.0.229" }
+serde              = { version = "1.0.229", features = [ "derive" ] }
 serde_json         = "1.0.154"
 sha2               = "0.11.1"
 tempfile           = "3.27.0"
 tracing            = "0.1.44"
-tracing-subscriber = { features = [ "env-filter" ], version = "0.3.23" }
-zeroize            = { features = [ "derive" ], version = "1.9.1" }
-
-[target.'cfg(unix)'.dependencies]
-libc = "0.2.191"
-nix  = { features = [ "signal" ], version = "0.31.3" }
+tracing-subscriber = { version = "0.3.23", features = [ "env-filter" ] }
+zeroize            = { version = "1.9.1", features = [ "derive" ] }
 
 [dev-dependencies]
-age = { features = [ "armor", "plugin" ], version = "0.12.1" }
+age = { version = "0.12.1", features = [ "armor", "plugin" ] }
 
-[profile.release]
-lto   = "thin"
-strip = true
+[target."cfg(unix)".dependencies]
+libc = "0.2.191"
+nix  = { version = "0.31.3", features = [ "signal" ] }
 
 [lints.clippy]
 cargo    = { level = "warn", priority = -1 }
@@ -67,6 +69,7 @@ missing_trait_methods          = "allow"
 mod_module_files               = "allow"
 module_name_repetitions        = "allow"
 multiple_crate_versions        = "allow"
+must_use_without_reason        = "allow"
 needless_borrowed_reference    = "allow"
 question_mark_used             = "allow"
 ref_patterns                   = "allow"
@@ -78,3 +81,9 @@ std_instead_of_alloc           = "allow"
 std_instead_of_core            = "allow"
 tests_outside_test_module      = "allow"
 unwrap_used                    = "allow"
+
+[profile.release]
+opt-level     = 3
+strip         = "symbols"
+lto           = "thin"
+codegen-units = 1
