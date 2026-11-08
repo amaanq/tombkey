@@ -10,15 +10,12 @@ keywords     = [ "age", "encryption", "nixos", "secrets" ]
 categories   = [ "command-line-utilities", "cryptography" ]
 
 [dependencies]
-age                = {
-  version  = "0.12.1",
-  features = [
-    "armor",
-    "cli-common",
-    "plugin",
-    "ssh",
-  ]
-}
+age                = { version = "0.12.1", features = [
+  "armor",
+  "cli-common",
+  "plugin",
+  "ssh",
+] }
 age-core           = "0.12.0"
 flub               = "0.1.0"
 hex                = "0.4.3"
