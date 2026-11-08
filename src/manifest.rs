@@ -100,7 +100,7 @@ impl Manifest {
       }
    }
 
-   #[must_use]
+   #[must_use = "constructing a manifest has no effect"]
    pub const fn empty() -> Self {
       Self {
          version: CURRENT_VERSION,
@@ -128,7 +128,7 @@ impl Manifest {
    }
 }
 
-#[must_use]
+#[must_use = "hashing has no effect"]
 pub fn sha256_hex(bytes: &[u8]) -> String {
    let mut hasher = Sha256::new();
    hasher.update(bytes);
@@ -137,7 +137,7 @@ pub fn sha256_hex(bytes: &[u8]) -> String {
 
 /// Fingerprint of a master pubkey set: sorted, `|`-joined, sha256-hex.
 /// Order-independent so master-rotation alone invalidates downstream caches.
-#[must_use]
+#[must_use = "hashing has no effect"]
 pub fn master_set_sha256_hex<'a, I>(pubkeys: I) -> String
 where
    I: IntoIterator<Item = &'a str>,

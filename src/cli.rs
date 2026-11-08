@@ -1,3 +1,8 @@
+#![expect(
+   unused_imports,
+   reason = "pound 0.6.1 derives an unused `ViaFromStr` import per field"
+)]
+
 use std::path::PathBuf;
 
 use pound::Parse;

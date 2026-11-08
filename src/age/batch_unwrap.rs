@@ -235,8 +235,8 @@ mod tests {
 
    #[test]
    fn ignores_non_age_input() {
-      assert!(plugin_stanzas(b"not an age file").is_empty());
-      assert!(plugin_stanzas(b"").is_empty());
+      assert_eq!(plugin_stanzas(b"not an age file"), Vec::<Stanza>::new());
+      assert_eq!(plugin_stanzas(b""), Vec::<Stanza>::new());
    }
 
    #[test]
@@ -249,6 +249,6 @@ mod tests {
          QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVo\n\
          --- TUFD\n\
          \x00";
-      assert!(plugin_stanzas(header).is_empty());
+      assert_eq!(plugin_stanzas(header), Vec::<Stanza>::new());
    }
 }

@@ -18,7 +18,7 @@ impl PluginPath {
    /// # Panics
    ///
    /// Panics if any plugin path contains the platform path separator.
-   #[must_use]
+   #[must_use = "dropping the guard restores the previous $PATH"]
    pub fn install<P>(plugins: &[P]) -> Self
    where
       P: AsRef<Path>,

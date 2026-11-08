@@ -307,7 +307,7 @@ mod tests {
    fn current_system_is_a_nix_double() {
       let system = current_system();
       let (arch, os) = system.split_once('-').unwrap();
-      assert!(!arch.is_empty());
+      assert_ne!(arch, "");
       assert!(matches!(os, "linux" | "darwin"));
    }
 }

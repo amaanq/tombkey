@@ -104,7 +104,7 @@ impl LoadedSecret {
       &self.path
    }
 
-   #[must_use]
+   #[must_use = "borrowing the plaintext has no effect"]
    pub fn bytes(&self) -> &[u8] {
       self.bytes.expose_secret()
    }
