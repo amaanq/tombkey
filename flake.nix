@@ -15,7 +15,7 @@
         );
 
       hasFenix = system: inputs.fenix.packages ? ${system};
-      hasMold = plat: plat.isLinux && (plat.isx86_64 || plat.isAarch64);
+      hasWild = plat: plat.isLinux && (plat.isx86_64 || plat.isAarch64);
     in
     {
       packages = eachSystem (
@@ -46,10 +46,14 @@
             nativeBuildInputs = [
               pkgs.pkg-config
             ]
-            ++ optionals (hasMold pkgs.stdenv.hostPlatform) [
+            ++ optionals (hasWild pkgs.stdenv.hostPlatform) [
               pkgs.clang
-              pkgs.mold
+              pkgs.wild
             ];
+
+            env = lib.optionalAttrs (hasWild pkgs.stdenv.hostPlatform) {
+              RUSTFLAGS = "-Clinker=${pkgs.clang}/bin/${pkgs.clang.targetPrefix}clang -Clink-arg=--ld-path=wild";
+            };
 
             meta = {
               description = "Re-encrypt age secrets to per-host pubkeys, driven by a Nix plan";
@@ -156,9 +160,9 @@
               pkgs.taplo
               toolchain
             ]
-            ++ optionals (hasMold pkgs.stdenv.hostPlatform) [
+            ++ optionals (hasWild pkgs.stdenv.hostPlatform) [
               pkgs.clang
-              pkgs.mold
+              pkgs.wild
             ];
           };
         }
