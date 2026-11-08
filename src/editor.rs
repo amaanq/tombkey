@@ -173,15 +173,10 @@ impl Drop for LoadedSecret {
 fn install_signal_handlers() {
    #[cfg(unix)]
    {
-      use std::sync::Once;
-
-      use nix::sys::signal::{
-         SaFlags,
-         SigAction,
-         SigHandler,
-         SigSet,
-         Signal,
-         sigaction,
+      use std::{
+         mem,
+         ptr,
+         sync::Once,
       };
 
       static INIT: Once = Once::new();
@@ -189,15 +184,13 @@ fn install_signal_handlers() {
          extern "C" fn handler(_: libc::c_int) {
             ABORTED.store(true, Ordering::SeqCst);
          }
-         let action = SigAction::new(
-            SigHandler::Handler(handler),
-            SaFlags::empty(),
-            SigSet::empty(),
-         );
-         for sig in &[Signal::SIGINT, Signal::SIGTERM, Signal::SIGHUP] {
+         // SAFETY: all zeroes is an empty mask, no flags and SIG_DFL.
+         let mut action = unsafe { mem::zeroed::<libc::sigaction>() };
+         action.sa_sigaction = handler as *const () as libc::sighandler_t;
+         for sig in [libc::SIGINT, libc::SIGTERM, libc::SIGHUP] {
             // SAFETY: handler is async-signal-safe (just an atomic store).
             unsafe {
-               let _ = sigaction(*sig, &action);
+               let _ = libc::sigaction(sig, &raw const action, ptr::null_mut());
             }
          }
       });
