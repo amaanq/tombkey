@@ -13,12 +13,12 @@ use crate::{
       Error,
       Result,
    },
-   ops,
+   ops::source::load_canonical_plaintext,
    plan::Plan,
 };
 
 pub fn run(plans: &[Plan], repo_root: &Path, secret_path: &Path) -> Result<()> {
-   let (_, _, _, plaintext) = ops::load_canonical_plaintext(plans, repo_root, secret_path, false)?;
+   let (_, _, _, plaintext) = load_canonical_plaintext(plans, repo_root, secret_path, false)?;
    io::stdout().write_all(&plaintext).map_err(|cause| {
       Error::Io {
          action: "write stdout",

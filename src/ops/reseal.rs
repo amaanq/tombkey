@@ -35,13 +35,22 @@ use crate::{
       master_set_sha256_hex,
       sha256_hex,
    },
-   ops,
+   ops::{
+      batch::{
+         BatchDecryptInput,
+         batch_unwrap_file_keys,
+      },
+      source::{
+         install_plugin_paths,
+         validate_source_master_consistency,
+      },
+   },
    plan::Plan,
 };
 
 pub fn run(plans: &[Plan], repo_root: &Path, manifest_path: &Path, force: bool) -> Result<usize> {
-   ops::validate_source_master_consistency(plans)?;
-   let _plugin_guard = ops::install_plugin_paths(plans);
+   validate_source_master_consistency(plans)?;
+   let _plugin_guard = install_plugin_paths(plans);
 
    let mut sources = BTreeMap::<PathBuf, SourceTargets<'_>>::new();
    for plan in plans {
@@ -89,13 +98,13 @@ pub fn run(plans: &[Plan], repo_root: &Path, manifest_path: &Path, force: bool) 
    let inputs = prepared
       .iter()
       .map(|entry| {
-         ops::BatchDecryptInput {
+         BatchDecryptInput {
             ciphertext:     entry.2.as_slice(),
             identity_paths: entry.1.identity_paths.iter().copied().collect(),
          }
       })
       .collect::<Vec<_>>();
-   let file_keys = ops::batch_unwrap_file_keys(plans, &inputs);
+   let file_keys = batch_unwrap_file_keys(plans, &inputs);
 
    for ((rel_path, targets, ciphertext, master_set_sha), file_key) in
       prepared.into_iter().zip(file_keys)

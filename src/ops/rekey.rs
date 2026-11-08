@@ -44,7 +44,17 @@ use crate::{
       master_set_sha256_hex,
       sha256_hex,
    },
-   ops,
+   ops::{
+      batch::{
+         BatchDecryptInput,
+         batch_unwrap_file_keys,
+      },
+      orphans::sweep_orphans,
+      source::{
+         install_plugin_paths,
+         validate_source_master_consistency,
+      },
+   },
    plan::{
       Plan,
       SecretEntry,
@@ -74,8 +84,8 @@ struct StaleTarget<'a> {
 type IdentityCache<'a> = BTreeMap<Vec<&'a Path>, Vec<Box<dyn age::Identity + Send + Sync>>>;
 
 pub fn run(plans: &[Plan], repo_root: &Path, manifest_path: &Path) -> Result<usize> {
-   ops::validate_source_master_consistency(plans)?;
-   let _plugin_guard = ops::install_plugin_paths(plans);
+   validate_source_master_consistency(plans)?;
+   let _plugin_guard = install_plugin_paths(plans);
 
    let mut manifest = Manifest::load(manifest_path)?;
    let manifest_initial = manifest.clone();
@@ -159,7 +169,7 @@ pub fn run(plans: &[Plan], repo_root: &Path, manifest_path: &Path) -> Result<usi
    }
 
    for plan in plans {
-      let removed = ops::sweep_orphans(plan, repo_root)?;
+      let removed = sweep_orphans(plan, repo_root)?;
       if removed > 0 {
          info!(
             removed,
@@ -248,13 +258,13 @@ fn batch_unwrap_sources(plans: &[Plan], pending: &[PendingSource<'_>]) -> Vec<Op
                   .map(|master| master.identity.as_path())
             })
             .collect();
-         ops::BatchDecryptInput {
+         BatchDecryptInput {
             ciphertext: source.source_bytes.as_slice(),
             identity_paths,
          }
       })
       .collect::<Vec<_>>();
-   ops::batch_unwrap_file_keys(plans, &inputs)
+   batch_unwrap_file_keys(plans, &inputs)
 }
 
 fn load_identities<'a, 'cache>(

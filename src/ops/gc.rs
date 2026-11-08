@@ -16,7 +16,7 @@ use tracing::info;
 use crate::{
    error::Result,
    manifest::Manifest,
-   ops,
+   ops::orphans::sweep_orphans,
    plan::Plan,
 };
 
@@ -60,7 +60,7 @@ pub fn run(plans: &[Plan], repo_root: &Path, manifest_path: &Path) -> Result<usi
    // Sweep filesystems first so a failure leaves the manifest untouched.
    let mut removed_files = 0;
    for plan in plans {
-      removed_files += ops::sweep_orphans(plan, repo_root)?;
+      removed_files += sweep_orphans(plan, repo_root)?;
    }
 
    if manifest != manifest_initial {

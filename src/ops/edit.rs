@@ -15,7 +15,10 @@ use crate::{
       Result,
    },
    fs::write_atomic,
-   ops,
+   ops::{
+      rekey,
+      source::load_canonical_plaintext,
+   },
    plan::Plan,
 };
 
@@ -26,7 +29,7 @@ pub fn run(
    secret_path: &Path,
 ) -> Result<()> {
    let (canonical, source_abs, plugin_guard, plaintext) =
-      ops::load_canonical_plaintext(plans, repo_root, secret_path, true)?;
+      load_canonical_plaintext(plans, repo_root, secret_path, true)?;
 
    let basename = source_abs.file_name().map_or_else(
       || "secret".into(),
@@ -59,7 +62,7 @@ pub fn run(
    // Reinstall the full plugin union inside rekey.
    drop(plugin_guard);
 
-   let failures = ops::rekey::run(plans, repo_root, manifest_path)?;
+   let failures = rekey::run(plans, repo_root, manifest_path)?;
    if failures > 0 {
       return Err(Error::Aggregated(failures));
    }

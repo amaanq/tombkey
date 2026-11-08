@@ -34,7 +34,10 @@ use tombkey::{
       Manifest,
       SecretFingerprint,
    },
-   ops,
+   ops::{
+      orphans::sweep_orphans,
+      rekey,
+   },
    plan::{
       MasterIdentity,
       Plan,
@@ -181,7 +184,7 @@ fn skip_on_current_inputs_avoids_re_encrypt() {
    let plan = fixture.plan();
 
    assert_eq!(
-      ops::rekey::run(
+      rekey::run(
          slice::from_ref(&plan),
          &fixture.repo_root,
          &fixture.manifest
@@ -196,7 +199,7 @@ fn skip_on_current_inputs_avoids_re_encrypt() {
    let mtime_b = fs::metadata(&out_b).unwrap().modified().unwrap();
 
    assert_eq!(
-      ops::rekey::run(
+      rekey::run(
          slice::from_ref(&plan),
          &fixture.repo_root,
          &fixture.manifest
@@ -213,7 +216,7 @@ fn source_change_forces_rekey() {
    let fixture = fixture(&["alpha"]);
    let plan = fixture.plan();
    assert_eq!(
-      ops::rekey::run(
+      rekey::run(
          slice::from_ref(&plan),
          &fixture.repo_root,
          &fixture.manifest
@@ -234,7 +237,7 @@ fn source_change_forces_rekey() {
    thread::sleep(Duration::from_millis(10));
 
    assert_eq!(
-      ops::rekey::run(
+      rekey::run(
          slice::from_ref(&plan),
          &fixture.repo_root,
          &fixture.manifest
@@ -256,7 +259,7 @@ fn master_set_change_forces_rekey() {
    let fixture = fixture(&["alpha"]);
    let plan = fixture.plan();
    assert_eq!(
-      ops::rekey::run(
+      rekey::run(
          slice::from_ref(&plan),
          &fixture.repo_root,
          &fixture.manifest
@@ -288,7 +291,7 @@ fn master_set_change_forces_rekey() {
    thread::sleep(Duration::from_millis(10));
 
    assert_eq!(
-      ops::rekey::run(
+      rekey::run(
          slice::from_ref(&plan2),
          &fixture.repo_root,
          &fixture.manifest
@@ -315,7 +318,7 @@ fn failed_secret_purges_output_and_manifest_entry() {
    let fixture = fixture(&["alpha", "beta"]);
    let plan = fixture.plan();
    assert_eq!(
-      ops::rekey::run(
+      rekey::run(
          slice::from_ref(&plan),
          &fixture.repo_root,
          &fixture.manifest
@@ -328,7 +331,7 @@ fn failed_secret_purges_output_and_manifest_entry() {
 
    fs::write(&fixture.sources[0].abs, b"not-age-ciphertext").unwrap();
 
-   let failures = ops::rekey::run(
+   let failures = rekey::run(
       slice::from_ref(&plan),
       &fixture.repo_root,
       &fixture.manifest,
@@ -355,7 +358,7 @@ fn delete_failure_blocks_manifest_commit() {
    let fixture = fixture(&["alpha", "beta"]);
    let plan = fixture.plan();
    assert_eq!(
-      ops::rekey::run(
+      rekey::run(
          slice::from_ref(&plan),
          &fixture.repo_root,
          &fixture.manifest
@@ -371,7 +374,7 @@ fn delete_failure_blocks_manifest_commit() {
    fs::remove_file(&out_alpha).unwrap();
    fs::create_dir_all(&out_alpha).unwrap();
 
-   let result = ops::rekey::run(
+   let result = rekey::run(
       slice::from_ref(&plan),
       &fixture.repo_root,
       &fixture.manifest,
@@ -390,7 +393,7 @@ fn removed_secret_prunes_output_and_manifest_entry() {
    let fixture = fixture(&["alpha", "beta"]);
    let plan = fixture.plan();
    assert_eq!(
-      ops::rekey::run(
+      rekey::run(
          slice::from_ref(&plan),
          &fixture.repo_root,
          &fixture.manifest
@@ -405,7 +408,7 @@ fn removed_secret_prunes_output_and_manifest_entry() {
    plan2.secrets.retain(|secret| secret.name != "beta");
 
    assert_eq!(
-      ops::rekey::run(
+      rekey::run(
          slice::from_ref(&plan2),
          &fixture.repo_root,
          &fixture.manifest
@@ -435,7 +438,7 @@ fn orphan_sweep_recurses_into_nested_storage_dirs() {
    fs::write(&owned, b"owned ciphertext").unwrap();
    fs::write(&orphan, b"stale ciphertext").unwrap();
 
-   assert_eq!(ops::sweep_orphans(&plan, &fixture.repo_root).unwrap(), 1);
+   assert_eq!(sweep_orphans(&plan, &fixture.repo_root).unwrap(), 1);
    assert!(owned.is_file(), "owned nested output should remain");
    assert!(!orphan.exists(), "nested orphan output should be removed");
 }
@@ -445,7 +448,7 @@ fn multi_host_manifest_preserves_other_host_sections() {
    let fixture = fixture(&["alpha"]);
    let plan = fixture.plan();
    assert_eq!(
-      ops::rekey::run(
+      rekey::run(
          slice::from_ref(&plan),
          &fixture.repo_root,
          &fixture.manifest
@@ -466,7 +469,7 @@ fn multi_host_manifest_preserves_other_host_sections() {
    });
    manifest.write_atomic(&fixture.manifest).unwrap();
    assert_eq!(
-      ops::rekey::run(
+      rekey::run(
          slice::from_ref(&plan),
          &fixture.repo_root,
          &fixture.manifest
@@ -535,7 +538,7 @@ fn two_hosts_sharing_one_source_each_get_their_own_output() {
    let plan_b = make_plan(&host_b, "host-b", storage_host_b);
 
    assert_eq!(
-      ops::rekey::run(&[plan_a, plan_b], &repo_root, &manifest).unwrap(),
+      rekey::run(&[plan_a, plan_b], &repo_root, &manifest).unwrap(),
       0
    );
 
@@ -561,7 +564,7 @@ fn skip_run_does_not_rewrite_manifest() {
    let fixture = fixture(&["alpha"]);
    let plan = fixture.plan();
    assert_eq!(
-      ops::rekey::run(
+      rekey::run(
          slice::from_ref(&plan),
          &fixture.repo_root,
          &fixture.manifest
@@ -572,7 +575,7 @@ fn skip_run_does_not_rewrite_manifest() {
    let mtime_before = fs::metadata(&fixture.manifest).unwrap().modified().unwrap();
    thread::sleep(Duration::from_millis(10));
    assert_eq!(
-      ops::rekey::run(
+      rekey::run(
          slice::from_ref(&plan),
          &fixture.repo_root,
          &fixture.manifest
@@ -655,7 +658,7 @@ fn divergent_master_sets_for_shared_source_are_rejected() {
       storage_beta_rel,
    );
 
-   let err = ops::rekey::run(&[plan_alpha, plan_beta], &repo_root, &manifest).unwrap_err();
+   let err = rekey::run(&[plan_alpha, plan_beta], &repo_root, &manifest).unwrap_err();
    let msg = err.to_string();
    assert!(
       msg.contains("different master sets"),
@@ -668,7 +671,7 @@ fn cache_hit_run_does_not_require_identity_files() {
    let fixture = fixture(&["alpha"]);
    let plan = fixture.plan();
    assert_eq!(
-      ops::rekey::run(
+      rekey::run(
          slice::from_ref(&plan),
          &fixture.repo_root,
          &fixture.manifest
@@ -680,7 +683,7 @@ fn cache_hit_run_does_not_require_identity_files() {
    fs::remove_file(&fixture.master_id).unwrap();
 
    assert_eq!(
-      ops::rekey::run(
+      rekey::run(
          slice::from_ref(&plan),
          &fixture.repo_root,
          &fixture.manifest
@@ -696,7 +699,7 @@ fn unreadable_source_purges_outputs_and_fails_loud() {
    let fixture = fixture(&["alpha", "beta"]);
    let plan = fixture.plan();
    assert_eq!(
-      ops::rekey::run(
+      rekey::run(
          slice::from_ref(&plan),
          &fixture.repo_root,
          &fixture.manifest
@@ -711,7 +714,7 @@ fn unreadable_source_purges_outputs_and_fails_loud() {
 
    fs::remove_file(&fixture.sources[0].abs).unwrap();
 
-   let result = ops::rekey::run(
+   let result = rekey::run(
       slice::from_ref(&plan),
       &fixture.repo_root,
       &fixture.manifest,
