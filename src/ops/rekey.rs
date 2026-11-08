@@ -32,6 +32,7 @@ use crate::{
       encrypt,
    },
    error::{
+      Chain,
       Error,
       Result,
    },
@@ -154,10 +155,7 @@ pub fn run(plans: &[Plan], repo_root: &Path, manifest_path: &Path) -> Result<usi
          .map(|secret| secret.name.as_str())
          .collect::<Vec<_>>()
          .join(", ");
-      return Err(Error::Storage(format!(
-         "stale outputs could not be removed for failed secrets ({names}); refusing to commit \
-          manifest"
-      )));
+      return Err(Error::StaleOutputs(names));
    }
 
    for plan in plans {
@@ -208,11 +206,12 @@ fn build_plan_ctxs<'a>(
             secrets:            BTreeMap::new(),
          };
          let storage_abs = repo_root.join(&plan.local_storage_dir);
-         fs::create_dir_all(&storage_abs).map_err(|err| {
-            Error::Storage(format!(
-               "create local_storage_dir {}: {err}",
-               storage_abs.display()
-            ))
+         fs::create_dir_all(&storage_abs).map_err(|cause| {
+            Error::File {
+               action: "create local_storage_dir",
+               path: storage_abs.clone(),
+               cause,
+            }
          })?;
          Ok(PlanCtx {
             plan,
@@ -299,7 +298,7 @@ fn decrypt_pending<'a>(
       let identities = match load_identities(&source.consumers, plan_ctxs, identity_cache) {
          Ok(ids) => ids,
          Err(err) => {
-            warn!(source = %source.source_path.display(), error = %err, "identity load failed");
+            warn!(source = %source.source_path.display(), error = %Chain(&err), "identity load failed");
             return None;
          },
       };
@@ -307,8 +306,8 @@ fn decrypt_pending<'a>(
    };
    match result {
       Ok(bytes) => Some(SecretBox::new(Box::new(bytes))),
-      Err(message) => {
-         warn!(source = %source.source_path.display(), error = message.as_str(), "decrypt failed");
+      Err(err) => {
+         warn!(source = %source.source_path.display(), error = %Chain(&err), "decrypt failed");
          None
       },
    }
@@ -362,7 +361,7 @@ fn fan_out_to_target<'a>(
          warn!(
             secret = target.secret.name.as_str(),
             host = ctx.plan.host_label.as_str(),
-            error = %err,
+            error = %Chain(&err),
             "encrypt to host pubkey failed",
          );
          record_secret_failure(target.secret, repo_root, report);

@@ -124,8 +124,7 @@ pub fn discover(repo_root: &Path, jobs: Option<usize>, impure: bool) -> Result<V
    let mut plans = Vec::with_capacity(evals.len());
    let plugins = plugin_union(&evals);
    for eval in evals {
-      let bytes = serde_json::to_vec(&eval.plan)?;
-      let mut plan = Plan::from_json(&bytes)?;
+      let mut plan = Plan::from_value(eval.plan)?;
       plan.age_plugins = plugins.iter().map(|plugin| plugin.dir.clone()).collect();
       plans.push(plan);
    }
@@ -147,20 +146,25 @@ fn enumerate_hosts(flake: &str, impure: bool) -> Result<Vec<(String, String)>> {
       if impure {
          command.arg("--impure");
       }
-      let output = command
-         .output()
-         .map_err(|err| Error::Discover(format!("spawn nix eval: {err}")))?;
+      let target = format!("{flake}#{attr}");
+      let output = command.output().map_err(|cause| {
+         Error::Spawn {
+            program: "nix eval".to_owned(),
+            cause,
+         }
+      })?;
       if !output.status.success() {
          let stderr = String::from_utf8_lossy(&output.stderr);
          if stderr.contains("does not provide attribute") {
             continue;
          }
-         return Err(Error::Discover(format!(
-            "nix eval {flake}#{attr} failed:\n{}",
-            tail(&stderr)
-         )));
+         return Err(Error::NixEval {
+            target,
+            stderr: tail(&stderr),
+         });
       }
-      let names: Vec<String> = serde_json::from_slice(&output.stdout)?;
+      let names: Vec<String> = serde_json::from_slice(&output.stdout)
+         .map_err(|cause| Error::ParseEval { target, cause })?;
       hosts.extend(names.into_iter().map(|name| (attr.to_owned(), name)));
    }
    Ok(hosts)
@@ -182,16 +186,20 @@ fn eval_host(flake: &str, attr: &str, host: &str, impure: bool) -> Result<Option
    if env::var_os("GC_INITIAL_HEAP_SIZE").is_none() {
       command.env("GC_INITIAL_HEAP_SIZE", "2G");
    }
-   let output = command
-      .output()
-      .map_err(|err| Error::Discover(format!("spawn nix eval: {err}")))?;
+   let target = format!("{flake}#{attr}.{host}");
+   let output = command.output().map_err(|cause| {
+      Error::Spawn {
+         program: "nix eval".to_owned(),
+         cause,
+      }
+   })?;
    if !output.status.success() {
-      return Err(Error::Discover(format!(
-         "nix eval of {host} failed:\n{}",
-         tail(&String::from_utf8_lossy(&output.stderr))
-      )));
+      return Err(Error::NixEval {
+         target,
+         stderr: tail(&String::from_utf8_lossy(&output.stderr)),
+      });
    }
-   Ok(serde_json::from_slice(&output.stdout)?)
+   serde_json::from_slice(&output.stdout).map_err(|cause| Error::ParseEval { target, cause })
 }
 
 /// Plugins run on this machine, so every plan gets the local system's union of
@@ -233,7 +241,12 @@ fn realise_missing(plugins: &BTreeSet<PluginEval>) -> Result<()> {
       .args(["build", "--no-link"])
       .args(&missing)
       .status()
-      .map_err(|err| Error::Discover(format!("spawn nix build: {err}")))?;
+      .map_err(|cause| {
+         Error::Spawn {
+            program: "nix build".to_owned(),
+            cause,
+         }
+      })?;
    if !status.success() {
       return Err(Error::Discover(format!(
          "failed to realise age plugins: {}",

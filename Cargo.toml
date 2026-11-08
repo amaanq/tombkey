@@ -14,6 +14,7 @@ categories   = [ "command-line-utilities", "cryptography" ]
 [dependencies]
 age                = { features = [ "armor", "cli-common", "plugin", "ssh" ], version = "0.12.1" }
 age-core           = "0.12.0"
+flub               = "0.1.0"
 hex                = "0.4.3"
 pound              = "0.6.1"
 region             = "4.0.1"
@@ -22,7 +23,6 @@ serde              = { features = [ "derive" ], version = "1.0.229" }
 serde_json         = "1.0.154"
 sha2               = "0.11.1"
 tempfile           = "3.27.0"
-thiserror          = "2.0.18"
 tracing            = "0.1.44"
 tracing-subscriber = { features = [ "env-filter" ], version = "0.3.23" }
 zeroize            = { features = [ "derive" ], version = "1.9.1" }

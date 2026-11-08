@@ -25,7 +25,7 @@ use crate::{
 
 pub fn encrypt(plaintext: &[u8], recipient_strs: &[&str]) -> Result<Vec<u8>> {
    if recipient_strs.is_empty() {
-      return Err(Error::Encrypt("at least one recipient is required".into()));
+      return Err(Error::NoRecipients);
    }
 
    let mut recipients = Vec::<Box<dyn Recipient>>::new();
@@ -46,7 +46,7 @@ pub fn encrypt(plaintext: &[u8], recipient_strs: &[&str]) -> Result<Vec<u8>> {
             .push(recipient);
          continue;
       }
-      return Err(Error::Encrypt(format!("not a valid recipient: {value:?}")));
+      return Err(Error::InvalidRecipient((*value).to_owned()));
    }
 
    for (plugin_name, recipients_for_plugin) in plugin_by_name {
@@ -56,7 +56,12 @@ pub fn encrypt(plaintext: &[u8], recipient_strs: &[&str]) -> Result<Vec<u8>> {
          &[],
          TracingCallbacks,
       )
-      .map_err(|err| Error::Encrypt(format!("plugin {plugin_name:?} init: {err}")))?;
+      .map_err(|cause| {
+         Error::Plugin {
+            plugin: plugin_name,
+            cause,
+         }
+      })?;
       recipients.push(Box::new(bundle));
    }
 
@@ -65,16 +70,14 @@ pub fn encrypt(plaintext: &[u8], recipient_strs: &[&str]) -> Result<Vec<u8>> {
          .iter()
          .map(|recipient| recipient.as_ref() as &dyn age::Recipient),
    )
-   .map_err(|err| Error::Encrypt(format!("encryptor init: {err}")))?;
+   .map_err(Error::Encryptor)?;
    let mut out = Vec::<u8>::new();
    let mut writer = encryptor
       .wrap_output(&mut out)
-      .map_err(|err| Error::Encrypt(format!("wrap_output: {err}")))?;
+      .map_err(Error::WriteCiphertext)?;
    writer
       .write_all(plaintext)
-      .map_err(|err| Error::Encrypt(format!("write: {err}")))?;
-   writer
-      .finish()
-      .map_err(|err| Error::Encrypt(format!("finish: {err}")))?;
+      .map_err(Error::WriteCiphertext)?;
+   writer.finish().map_err(Error::WriteCiphertext)?;
    Ok(out)
 }

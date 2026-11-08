@@ -17,6 +17,7 @@ use tombkey::{
    },
    discover,
    error::{
+      Chain,
       Error,
       Result,
    },
@@ -32,7 +33,7 @@ fn main() {
    match dispatch(&cli) {
       Ok(exit_code) => process::exit(exit_code),
       Err(err) => {
-         error!(error = %err, "tombkey failed");
+         error!(error = %Chain(&err), "tombkey failed");
          process::exit(1);
       },
    }
@@ -82,8 +83,13 @@ fn dispatch(cli: &Cli) -> Result<i32> {
 }
 
 fn load_plan(path: &Path) -> Result<Plan> {
-   let bytes = fs::read(path)
-      .map_err(|err| Error::InvalidPlan(format!("read {}: {err}", path.display())))?;
+   let bytes = fs::read(path).map_err(|cause| {
+      Error::File {
+         action: "read plan",
+         path: path.to_path_buf(),
+         cause,
+      }
+   })?;
    Plan::from_json(&bytes)
 }
 
@@ -96,26 +102,28 @@ fn load_plan(path: &Path) -> Result<Plan> {
 /// 3. Walk up from `$PWD` until a `flake.nix` shows up.
 fn resolve_repo_root(override_path: Option<&Path>) -> Result<PathBuf> {
    if let Some(path) = override_path {
-      let canonical = fs::canonicalize(path).map_err(|err| {
-         Error::Storage(format!(
-            "canonicalize --repo-root {}: {err}",
-            path.display()
-         ))
+      let canonical = fs::canonicalize(path).map_err(|cause| {
+         Error::File {
+            action: "canonicalize --repo-root",
+            path: path.to_path_buf(),
+            cause,
+         }
       })?;
       return Ok(canonical);
    }
-   let start = env::current_dir().map_err(|err| Error::Storage(format!("current_dir: {err}")))?;
+   let start = env::current_dir().map_err(|cause| {
+      Error::Io {
+         action: "read current directory",
+         cause,
+      }
+   })?;
    let mut cursor = start.clone();
    loop {
       if cursor.join("flake.nix").is_file() {
          return Ok(cursor);
       }
       if !cursor.pop() {
-         return Err(Error::InvalidPlan(format!(
-            "no flake.nix in any parent of {}: run tombkey from inside your flake checkout, or \
-             pass --repo-root <path> (or set TOMBKEY_REPO_ROOT)",
-            start.display(),
-         )));
+         return Err(Error::NoFlake { start });
       }
    }
 }

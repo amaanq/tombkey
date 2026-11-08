@@ -24,6 +24,7 @@ use crate::{
       encrypt,
    },
    error::{
+      Chain,
       Error,
       Result,
    },
@@ -64,7 +65,7 @@ pub fn run(plans: &[Plan], repo_root: &Path, manifest_path: &Path, force: bool) 
       let ciphertext = match fs::read(&abs_path) {
          Ok(bytes) => bytes,
          Err(err) => {
-            warn!(source = %abs_path.display(), error = %err, "reseal failed");
+            warn!(source = %abs_path.display(), error = %Chain(&err), "reseal failed");
             failures += 1;
             continue;
          },
@@ -109,7 +110,7 @@ pub fn run(plans: &[Plan], repo_root: &Path, manifest_path: &Path, force: bool) 
             });
          },
          Err(err) => {
-            warn!(source = %abs_path.display(), error = %err, "reseal failed");
+            warn!(source = %abs_path.display(), error = %Chain(&err), "reseal failed");
             failures += 1;
          },
       }
@@ -143,15 +144,20 @@ fn reseal_source(
       let identities = decrypt::identities_from_files(targets.identity_paths.iter().copied())?;
       decrypt::decrypt(ciphertext, &identities)
    }
-   .map_err(|message| {
+   .map_err(|cause| {
       Error::Decrypt {
          path: source_path.to_path_buf(),
-         message,
+         cause,
       }
    })?;
    let master_pubkeys = targets.master_pubkeys.iter().copied().collect::<Vec<_>>();
    let updated = encrypt::encrypt(&plaintext, &master_pubkeys)?;
-   write_atomic(source_path, &updated)
-      .map_err(|err| Error::Encrypt(format!("write {}: {err}", source_path.display())))?;
+   write_atomic(source_path, &updated).map_err(|cause| {
+      Error::File {
+         action: "write source",
+         path: source_path.to_path_buf(),
+         cause,
+      }
+   })?;
    Ok(updated)
 }

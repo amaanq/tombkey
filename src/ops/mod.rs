@@ -25,6 +25,7 @@ use crate::{
       plugin::PluginPath,
    },
    error::{
+      Chain,
       Error,
       Result,
    },
@@ -72,7 +73,7 @@ fn batch_unwrap_file_keys(
       .collect::<Vec<&[u8]>>();
 
    batch_unwrap::unwrap_file_keys(&ciphertexts, &identity_files, &binary).unwrap_or_else(|err| {
-      warn!(error = %err, "batch unwrap failed; falling back to per-source decrypt");
+      warn!(error = %Chain(&err), "batch unwrap failed; falling back to per-source decrypt");
       empty_file_keys(inputs.len())
    })
 }
@@ -99,15 +100,30 @@ pub fn sweep_orphans(plan: &Plan, repo_root: &Path) -> Result<usize> {
 }
 
 fn sweep_orphans_in(dir: &Path, owned: &HashSet<PathBuf>) -> Result<usize> {
-   let entries = fs::read_dir(dir)
-      .map_err(|err| Error::Storage(format!("read local_storage_dir {}: {err}", dir.display())))?;
+   let entries = fs::read_dir(dir).map_err(|cause| {
+      Error::File {
+         action: "read local_storage_dir",
+         path: dir.to_path_buf(),
+         cause,
+      }
+   })?;
    let mut removed = 0;
    for entry_result in entries {
-      let entry = entry_result.map_err(|err| Error::Storage(format!("read_dir entry: {err}")))?;
+      let entry = entry_result.map_err(|cause| {
+         Error::File {
+            action: "read entry of",
+            path: dir.to_path_buf(),
+            cause,
+         }
+      })?;
       let path = entry.path();
-      let file_type = entry
-         .file_type()
-         .map_err(|err| Error::Storage(format!("file type {}: {err}", path.display())))?;
+      let file_type = entry.file_type().map_err(|cause| {
+         Error::File {
+            action: "read file type of",
+            path: path.clone(),
+            cause,
+         }
+      })?;
       if file_type.is_dir() {
          removed += sweep_orphans_in(&path, owned)?;
          continue;
@@ -118,8 +134,13 @@ fn sweep_orphans_in(dir: &Path, owned: &HashSet<PathBuf>) -> Result<usize> {
       {
          continue;
       }
-      fs::remove_file(&path)
-         .map_err(|err| Error::Storage(format!("remove orphan {}: {err}", path.display())))?;
+      fs::remove_file(&path).map_err(|cause| {
+         Error::File {
+            action: "remove orphan",
+            path: path.clone(),
+            cause,
+         }
+      })?;
       removed += 1;
    }
    Ok(removed)
@@ -241,10 +262,11 @@ pub fn load_canonical_plaintext<'a>(
          info!(path = %source_abs.display(), "source not present; staging new secret");
          return Ok((canonical, source_abs, guard, Vec::new()));
       },
-      Err(err) => {
-         return Err(Error::Decrypt {
-            path:    source_abs,
-            message: format!("read source: {err}"),
+      Err(cause) => {
+         return Err(Error::File {
+            action: "read source",
+            path: source_abs,
+            cause,
          });
       },
    };
@@ -254,10 +276,10 @@ pub fn load_canonical_plaintext<'a>(
          .iter()
          .map(|master| &master.identity),
    )?;
-   let plaintext = decrypt::decrypt(&source, &identities).map_err(|message| {
+   let plaintext = decrypt::decrypt(&source, &identities).map_err(|cause| {
       Error::Decrypt {
          path: source_abs.clone(),
-         message,
+         cause,
       }
    })?;
    Ok((canonical, source_abs, guard, plaintext))

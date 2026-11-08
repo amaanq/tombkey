@@ -1,4 +1,5 @@
 use std::{
+   io,
    io::Read as _,
    path::{
       Path,
@@ -46,55 +47,64 @@ where
       let filename = path
          .to_str()
          .ok_or_else(|| {
-            Error::Identity {
-               path:    owned.clone(),
-               message: "non-UTF-8 path".into(),
+            Error::IdentityPath {
+               path: owned.clone(),
             }
          })?
          .to_owned();
       let file = IdentityFile::from_file(filename)
-         .map_err(|err| {
-            Error::Identity {
-               path:    owned.clone(),
-               message: format!("parse failed: {err}"),
+         .map_err(|cause| {
+            Error::File {
+               action: "read identity",
+               path: owned.clone(),
+               cause,
             }
          })?
          .with_callbacks(TracingCallbacks);
-      let mut loaded = file.into_identities().map_err(|err| {
+      let mut loaded = file.into_identities().map_err(|cause| {
          Error::Identity {
-            path:    owned.clone(),
-            message: format!("load failed: {err}"),
+            path: owned.clone(),
+            cause,
          }
       })?;
       identities.append(&mut loaded);
    }
 
    if identities.is_empty() {
-      return Err(Error::Identity {
-         path:    first_path.unwrap_or_default(),
-         message: "no identities parsed".into(),
+      return Err(Error::NoIdentities {
+         path: first_path.unwrap_or_default(),
       });
    }
    Ok(identities)
 }
 
-/// Decrypt `ciphertext`. Returns a bare message on failure so callers can
-/// attach the source path they know about.
+#[derive(Debug, flub::Error)]
+pub enum DecryptFailure {
+   #[error("read header")]
+   Header(#[source] DecryptError),
+   #[error("unwrap file key")]
+   FileKey(#[source] DecryptError),
+   #[error("read plaintext")]
+   Payload(#[source] io::Error),
+}
+
+/// Decrypt `ciphertext`. The failure carries no path so callers can attach
+/// the source path they know about.
 pub fn decrypt(
    ciphertext: &[u8],
    identities: &[Box<dyn age::Identity + Send + Sync>],
-) -> result::Result<Vec<u8>, String> {
+) -> result::Result<Vec<u8>, DecryptFailure> {
    // Wrap in ArmoredReader so ASCII-armored and raw-binary sources both work,
    // since the wrapper passes binary through.
-   let decryptor = Decryptor::new(ArmoredReader::new(ciphertext))
-      .map_err(|err| format!("decryptor init: {err}"))?;
+   let decryptor =
+      Decryptor::new(ArmoredReader::new(ciphertext)).map_err(DecryptFailure::Header)?;
    let mut reader = decryptor
       .decrypt(identities.iter().map(|i| i.as_ref() as &dyn age::Identity))
-      .map_err(|err| format!("decrypt: {err}"))?;
+      .map_err(DecryptFailure::FileKey)?;
    let mut plaintext = Vec::<u8>::new();
    reader
       .read_to_end(&mut plaintext)
-      .map_err(|err| format!("read plaintext: {err}"))?;
+      .map_err(DecryptFailure::Payload)?;
    Ok(plaintext)
 }
 
@@ -112,12 +122,12 @@ fn clone_file_key(key: &FileKey) -> FileKey {
    FileKey::init_with_mut(|slot| slot.copy_from_slice(key.expose_secret()))
 }
 
-/// Decrypt a payload with a file key already recovered out-of-band. Bare
-/// message on failure so the caller can attach the source path.
+/// Decrypt a payload with a file key already recovered out-of-band. The
+/// failure carries no path so the caller can attach the source path.
 pub fn decrypt_with_file_key(
    ciphertext: &[u8],
    file_key: FileKey,
-) -> result::Result<Vec<u8>, String> {
+) -> result::Result<Vec<u8>, DecryptFailure> {
    let identities: [Box<dyn Identity + Send + Sync>; 1] = [Box::new(PrecomputedKey(file_key))];
    decrypt(ciphertext, &identities)
 }

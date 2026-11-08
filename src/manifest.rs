@@ -74,25 +74,28 @@ impl Manifest {
    pub fn load(path: &Path) -> Result<Self> {
       match fs::read(path) {
          Ok(bytes) => {
-            let manifest = serde_json::from_slice::<Self>(&bytes).map_err(|err| {
-               Error::Storage(format!("parse manifest {}: {err}", path.display()))
+            let manifest = serde_json::from_slice::<Self>(&bytes).map_err(|cause| {
+               Error::Manifest {
+                  action: "parse",
+                  path: path.to_path_buf(),
+                  cause,
+               }
             })?;
             if manifest.version != CURRENT_VERSION {
-               return Err(Error::Storage(format!(
-                  "manifest {} version {} not supported (expected {})",
-                  path.display(),
-                  manifest.version,
-                  CURRENT_VERSION
-               )));
+               return Err(Error::ManifestVersion {
+                  path:  path.to_path_buf(),
+                  found: manifest.version,
+               });
             }
             Ok(manifest)
          },
          Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(Self::empty()),
-         Err(err) => {
-            Err(Error::Storage(format!(
-               "read manifest {}: {err}",
-               path.display()
-            )))
+         Err(cause) => {
+            Err(Error::File {
+               action: "read manifest",
+               path: path.to_path_buf(),
+               cause,
+            })
          },
       }
    }
@@ -107,11 +110,21 @@ impl Manifest {
    }
 
    pub fn write_atomic(&self, path: &Path) -> Result<()> {
-      let mut bytes = serde_json::to_vec_pretty(self)
-         .map_err(|err| Error::Storage(format!("serialize manifest {}: {err}", path.display())))?;
+      let mut bytes = serde_json::to_vec_pretty(self).map_err(|cause| {
+         Error::Manifest {
+            action: "serialize",
+            path: path.to_path_buf(),
+            cause,
+         }
+      })?;
       bytes.push(b'\n');
-      write_atomic(path, &bytes)
-         .map_err(|err| Error::Storage(format!("write manifest {}: {err}", path.display())))
+      write_atomic(path, &bytes).map_err(|cause| {
+         Error::File {
+            action: "write manifest",
+            path: path.to_path_buf(),
+            cause,
+         }
+      })
    }
 }
 

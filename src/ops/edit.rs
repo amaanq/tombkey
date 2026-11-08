@@ -47,8 +47,13 @@ pub fn run(
       .map(|master| master.pubkey.as_str())
       .collect::<Vec<_>>();
    let ciphertext = encrypt::encrypt(secret.bytes(), &master_pubkeys)?;
-   write_atomic(&source_abs, &ciphertext)
-      .map_err(|err| Error::Encrypt(format!("write {}: {err}", source_abs.display())))?;
+   write_atomic(&source_abs, &ciphertext).map_err(|cause| {
+      Error::File {
+         action: "write source",
+         path: source_abs.clone(),
+         cause,
+      }
+   })?;
    info!(path = %source_abs.display(), "source saved");
 
    // Reinstall the full plugin union inside rekey.

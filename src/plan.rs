@@ -69,7 +69,13 @@ pub struct SecretEntry {
 
 impl Plan {
    pub fn from_json(bytes: &[u8]) -> Result<Self> {
-      let plan = serde_json::from_slice::<Self>(bytes)?;
+      let plan = serde_json::from_slice::<Self>(bytes).map_err(Error::ParsePlan)?;
+      plan.validate()?;
+      Ok(plan)
+   }
+
+   pub fn from_value(value: serde_json::Value) -> Result<Self> {
+      let plan = serde_json::from_value::<Self>(value).map_err(Error::ParsePlan)?;
       plan.validate()?;
       Ok(plan)
    }

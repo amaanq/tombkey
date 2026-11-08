@@ -57,7 +57,12 @@ fn mlock(bytes: &[u8]) -> Option<LockGuard> {
 
 impl LoadedSecret {
    pub fn stage(plaintext: Vec<u8>, basename: &str) -> Result<Self> {
-      let tmpdir = TempDir::new().map_err(|err| Error::Editor(format!("tempdir: {err}")))?;
+      let tmpdir = TempDir::new().map_err(|cause| {
+         Error::Io {
+            action: "create tempdir",
+            cause,
+         }
+      })?;
       let path = tmpdir.path().join(basename);
       let mut file = fs::OpenOptions::new()
          .create(true)
@@ -65,13 +70,23 @@ impl LoadedSecret {
          .truncate(true)
          .mode_if_supported(0o600)
          .open(&path)
-         .map_err(|err| Error::Editor(format!("open tempfile {}: {err}", path.display())))?;
+         .map_err(|cause| {
+            Error::File {
+               action: "open tempfile",
+               path: path.clone(),
+               cause,
+            }
+         })?;
       file
          .write_all(&plaintext)
-         .map_err(|err| Error::Editor(format!("write tempfile: {err}")))?;
-      file
-         .sync_all()
-         .map_err(|err| Error::Editor(format!("sync tempfile: {err}")))?;
+         .and_then(|()| file.sync_all())
+         .map_err(|cause| {
+            Error::File {
+               action: "write tempfile",
+               path: path.clone(),
+               cause,
+            }
+         })?;
       drop(file);
 
       let mlock_guard = mlock(&plaintext);
@@ -103,20 +118,30 @@ impl LoadedSecret {
       let status = Command::new(&editor)
          .arg(&self.path)
          .status()
-         .map_err(|err| Error::Editor(format!("spawn {}: {err}", editor.to_string_lossy())))?;
+         .map_err(|cause| {
+            Error::Spawn {
+               program: editor.to_string_lossy().into_owned(),
+               cause,
+            }
+         })?;
       if !status.success() {
-         return Err(Error::Editor(format!(
-            "{} exited with status {status}",
-            editor.to_string_lossy()
-         )));
+         return Err(Error::EditorExit {
+            editor: editor.to_string_lossy().into_owned(),
+            status,
+         });
       }
       if ABORTED.load(Ordering::SeqCst) {
-         return Err(Error::Editor("edit aborted by signal".into()));
+         return Err(Error::EditAborted);
       }
 
       let before = sha256_hex(self.bytes.expose_secret());
-      let mut after_bytes =
-         fs::read(&self.path).map_err(|err| Error::Editor(format!("re-read tempfile: {err}")))?;
+      let mut after_bytes = fs::read(&self.path).map_err(|cause| {
+         Error::File {
+            action: "re-read tempfile",
+            path: self.path.clone(),
+            cause,
+         }
+      })?;
       let after = sha256_hex(&after_bytes);
 
       if before == after {
