@@ -13,6 +13,7 @@ use std::{
    },
 };
 
+use region::LockGuard;
 use secrecy::{
    ExposeSecret as _,
    SecretBox,
@@ -41,37 +42,17 @@ pub struct LoadedSecret {
    #[expect(dead_code, reason = "kept for Drop to unlink the tempdir")]
    tmpdir:      TempDir,
    path:        PathBuf,
-   mlock_guard: MlockGuard,
+   mlock_guard: Option<LockGuard>,
 }
 
 /// A best-effort `mlock`. Failure only weakens swap-leak defence, so we
 /// continue rather than abort.
-struct MlockGuard {
-   active: Option<(*const u8, usize)>,
-}
-
-/// SAFETY: The raw pointer is only passed back to [`region::unlock`].
-unsafe impl Send for MlockGuard {}
-
-impl MlockGuard {
-   fn lock(bytes: &[u8]) -> Self {
-      if bytes.is_empty() {
-         return Self { active: None };
-      }
-      // `LoadedSecret` keeps this buffer alive while the guard exists.
-      let locked = region::lock(bytes.as_ptr(), bytes.len()).is_ok();
-      Self {
-         active: locked.then_some((bytes.as_ptr(), bytes.len())),
-      }
+fn mlock(bytes: &[u8]) -> Option<LockGuard> {
+   if bytes.is_empty() {
+      return None;
    }
-}
-
-impl Drop for MlockGuard {
-   fn drop(&mut self) {
-      if let Some((ptr, len)) = self.active.take() {
-         let _ = region::unlock(ptr, len);
-      }
-   }
+   // `LoadedSecret` keeps this buffer alive while the guard exists.
+   region::lock(bytes.as_ptr(), bytes.len()).ok()
 }
 
 impl LoadedSecret {
@@ -93,7 +74,7 @@ impl LoadedSecret {
          .map_err(|err| Error::Editor(format!("sync tempfile: {err}")))?;
       drop(file);
 
-      let mlock_guard = MlockGuard::lock(&plaintext);
+      let mlock_guard = mlock(&plaintext);
       let bytes = SecretBox::new(Box::new(plaintext));
       Ok(Self {
          bytes,
@@ -143,7 +124,7 @@ impl LoadedSecret {
          return Ok(EditOutcome::Unchanged);
       }
 
-      self.mlock_guard = MlockGuard::lock(&after_bytes);
+      self.mlock_guard = mlock(&after_bytes);
       self.bytes = SecretBox::new(Box::new(after_bytes));
       Ok(EditOutcome::Modified)
    }

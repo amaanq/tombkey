@@ -70,7 +70,7 @@ struct StaleTarget<'a> {
    output_abs: PathBuf,
 }
 
-type IdentityCache<'a> = BTreeMap<Vec<&'a Path>, Vec<Box<dyn age::Identity>>>;
+type IdentityCache<'a> = BTreeMap<Vec<&'a Path>, Vec<Box<dyn age::Identity + Send + Sync>>>;
 
 pub fn run(plans: &[Plan], repo_root: &Path, manifest_path: &Path) -> Result<usize> {
    ops::validate_source_master_consistency(plans)?;
@@ -262,7 +262,7 @@ fn load_identities<'a, 'cache>(
    consumers: &[(usize, &'a SecretEntry)],
    plan_ctxs: &[PlanCtx<'a>],
    identity_cache: &'cache mut IdentityCache<'a>,
-) -> Result<&'cache [Box<dyn age::Identity>]> {
+) -> Result<&'cache [Box<dyn age::Identity + Send + Sync>]> {
    let identity_paths = consumers
       .iter()
       .flat_map(|&(plan_idx, _)| {

@@ -30,12 +30,12 @@ use crate::{
    },
 };
 
-pub fn identities_from_files<I, P>(paths: I) -> Result<Vec<Box<dyn age::Identity>>>
+pub fn identities_from_files<I, P>(paths: I) -> Result<Vec<Box<dyn age::Identity + Send + Sync>>>
 where
    I: IntoIterator<Item = P>,
    P: AsRef<Path>,
 {
-   let mut identities = Vec::<Box<dyn age::Identity>>::new();
+   let mut identities = Vec::<Box<dyn age::Identity + Send + Sync>>::new();
    let mut first_path = None::<PathBuf>;
    for entry in paths {
       let path = entry.as_ref();
@@ -82,7 +82,7 @@ where
 /// attach the source path they know about.
 pub fn decrypt(
    ciphertext: &[u8],
-   identities: &[Box<dyn age::Identity>],
+   identities: &[Box<dyn age::Identity + Send + Sync>],
 ) -> result::Result<Vec<u8>, String> {
    // Wrap in ArmoredReader so ASCII-armored and raw-binary sources both work,
    // since the wrapper passes binary through.
@@ -118,6 +118,6 @@ pub fn decrypt_with_file_key(
    ciphertext: &[u8],
    file_key: FileKey,
 ) -> result::Result<Vec<u8>, String> {
-   let identities: [Box<dyn Identity>; 1] = [Box::new(PrecomputedKey(file_key))];
+   let identities: [Box<dyn Identity + Send + Sync>; 1] = [Box::new(PrecomputedKey(file_key))];
    decrypt(ciphertext, &identities)
 }

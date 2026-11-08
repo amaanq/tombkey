@@ -12,27 +12,27 @@ keywords     = [ "age", "encryption", "nixos", "secrets" ]
 categories   = [ "command-line-utilities", "cryptography" ]
 
 [dependencies]
-age                = { features = [ "armor", "cli-common", "plugin", "ssh" ], version = "0.11.3" }
-age-core           = "0.11.0"
+age                = { features = [ "armor", "cli-common", "plugin", "ssh" ], version = "0.12.1" }
+age-core           = "0.12.0"
 clap               = { features = [ "cargo", "derive", "env" ], version = "4.6.1" }
 hex                = "0.4.3"
-region             = "3.0.2"
+region             = "4.0.1"
 secrecy            = "0.10.3"
-serde              = { features = [ "derive" ], version = "1.0.228" }
-serde_json         = "1.0.149"
-sha2               = "0.11.0"
+serde              = { features = [ "derive" ], version = "1.0.229" }
+serde_json         = "1.0.154"
+sha2               = "0.11.1"
 tempfile           = "3.27.0"
 thiserror          = "2.0.18"
 tracing            = "0.1.44"
 tracing-subscriber = { features = [ "env-filter" ], version = "0.3.23" }
-zeroize            = { features = [ "derive" ], version = "1.8.2" }
+zeroize            = { features = [ "derive" ], version = "1.9.1" }
 
 [target.'cfg(unix)'.dependencies]
-libc = "0.2.186"
+libc = "0.2.191"
 nix  = { features = [ "signal" ], version = "0.31.3" }
 
 [dev-dependencies]
-age = { features = [ "armor", "plugin" ], version = "0.11.3" }
+age = { features = [ "armor", "plugin" ], version = "0.12.1" }
 
 [profile.release]
 lto   = "thin"
