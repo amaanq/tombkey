@@ -9,7 +9,7 @@ use std::{
    process,
 };
 
-use clap::Parser as _;
+use pound::Parse as _;
 use tombkey::{
    cli::{
       Cli,
