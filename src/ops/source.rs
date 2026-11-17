@@ -9,6 +9,7 @@ use std::{
       Path,
       PathBuf,
    },
+   slice,
 };
 
 use tracing::info;
@@ -21,6 +22,10 @@ use crate::{
    error::{
       Error,
       Result,
+   },
+   ops::batch::{
+      BatchDecryptInput,
+      batch_unwrap_file_keys,
    },
    plan::Plan,
 };
@@ -147,13 +152,25 @@ pub fn load_canonical_plaintext<'a>(
          });
       },
    };
-   let identities = decrypt::identities_from_files(
-      canonical
+   // age::Decryptor spawns the plugin once per master identity.
+   let input = BatchDecryptInput {
+      ciphertext:     &source,
+      identity_paths: canonical
          .master_identities
          .iter()
-         .map(|master| &master.identity),
-   )?;
-   let plaintext = decrypt::decrypt(&source, &identities).map_err(|cause| {
+         .map(|master| master.identity.as_path())
+         .collect(),
+   };
+   let file_key = batch_unwrap_file_keys(slice::from_ref(canonical), slice::from_ref(&input))
+      .pop()
+      .flatten();
+   let plaintext = if let Some(key) = file_key {
+      decrypt::decrypt_with_file_key(&source, key)
+   } else {
+      let identities = decrypt::identities_from_files(input.identity_paths.iter().copied())?;
+      decrypt::decrypt(&source, &identities)
+   }
+   .map_err(|cause| {
       Error::Decrypt {
          path: source_abs.clone(),
          cause,
