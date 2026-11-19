@@ -11,7 +11,10 @@ use std::{
       Path,
       PathBuf,
    },
-   process::Command,
+   process::{
+      Command,
+      Stdio,
+   },
    sync::{
       Arc,
       Mutex,
@@ -37,24 +40,24 @@ use crate::{
 
 const CONFIG_ATTRS: [&str; 2] = ["nixosConfigurations", "darwinConfigurations"];
 
-/// Disabled hosts evaluate to `null` rather than an error.
-const HOST_APPLY: &str = "cfg: let tk = cfg.config.age.tombkey; in if tk.enable or false then { \
+/// Disabled hosts evaluate to `null`. A dynamic derivation's `drvPath` is a
+/// placeholder, so it builds through the derivation producing its `.drv`.
+const HOST_APPLY: &str = "cfg: let tk = cfg.config.age.tombkey; \
+                          installable = pkg: let drv = pkg.drvPath; \
+                          out = pkg.outputName or \"out\"; ctx = builtins.getContext drv; \
+                          producer = builtins.head (builtins.attrNames ctx); in \
+                          if builtins.dirOf drv == builtins.storeDir \
+                          then \"${builtins.unsafeDiscardStringContext drv}^${out}\" \
+                          else \"${producer}^${builtins.head ctx.${producer}.outputs}^${out}\"; \
+                          in if tk.enable or false then { \
                           plan = tk.planData; system = cfg.pkgs.stdenv.hostPlatform.system; \
-                          plugins = map (pkg: { dir = \"${pkg}/bin\"; drv = pkg.drvPath; }) \
-                          tk.agePlugins; } else null";
+                          plugins = map installable tk.agePlugins; } else null";
 
 #[derive(Deserialize)]
 struct HostEval {
    plan:    serde_json::Value,
    system:  String,
-   plugins: Vec<PluginEval>,
-}
-
-/// `drv` lets a plugin missing from every cache still be built locally.
-#[derive(Deserialize, Clone, PartialEq, Eq, PartialOrd, Ord)]
-struct PluginEval {
-   dir: PathBuf,
-   drv: PathBuf,
+   plugins: Vec<String>,
 }
 
 pub fn discover(repo_root: &Path, jobs: Option<usize>, impure: bool) -> Result<Vec<Plan>> {
@@ -122,13 +125,12 @@ pub fn discover(repo_root: &Path, jobs: Option<usize>, impure: bool) -> Result<V
    }
 
    let mut plans = Vec::with_capacity(evals.len());
-   let plugins = plugin_union(&evals);
+   let plugin_dirs = realise(&plugin_union(&evals))?;
    for eval in evals {
       let mut plan = Plan::from_value(eval.plan)?;
-      plan.age_plugins = plugins.iter().map(|plugin| plugin.dir.clone()).collect();
+      plan.age_plugins.clone_from(&plugin_dirs);
       plans.push(plan);
    }
-   realise_missing(&plugins)?;
    Ok(plans)
 }
 
@@ -204,15 +206,15 @@ fn eval_host(flake: &str, attr: &str, host: &str, impure: bool) -> Result<Option
 
 /// Plugins run on this machine, so every plan gets the local system's union of
 /// plugin dirs.
-fn plugin_union(evals: &[HostEval]) -> BTreeSet<PluginEval> {
+fn plugin_union(evals: &[HostEval]) -> BTreeSet<String> {
    let system = current_system();
-   let plugins: BTreeSet<PluginEval> = evals
+   let plugins = evals
       .iter()
       .filter(|eval| eval.system == system)
       .flat_map(|eval| eval.plugins.iter().cloned())
-      .collect();
+      .collect::<BTreeSet<String>>();
    if plugins.is_empty() {
-      warn!("no {system} host contributes age plugin dirs; plugin recipients may fail");
+      warn!("no {system} host contributes age plugins; plugin recipients may fail");
    }
    plugins
 }
@@ -227,33 +229,31 @@ fn current_system() -> String {
 }
 
 /// Substitutes missing plugins, or builds them when no cache has them.
-fn realise_missing(plugins: &BTreeSet<PluginEval>) -> Result<()> {
-   let missing: Vec<String> = plugins
-      .iter()
-      .filter(|plugin| !plugin.dir.exists())
-      .map(|plugin| format!("{}^*", plugin.drv.display()))
-      .collect();
-   if missing.is_empty() {
-      return Ok(());
+fn realise(installables: &BTreeSet<String>) -> Result<Vec<PathBuf>> {
+   if installables.is_empty() {
+      return Ok(Vec::new());
    }
-   info!("realising {} missing age plugin(s)", missing.len());
-   let status = Command::new("nix")
-      .args(["build", "--no-link"])
-      .args(&missing)
-      .status()
+   let output = Command::new("nix")
+      .args(["build", "--no-link", "--print-out-paths"])
+      .args(installables)
+      .stderr(Stdio::inherit())
+      .output()
       .map_err(|cause| {
          Error::Spawn {
             program: "nix build".to_owned(),
             cause,
          }
       })?;
-   if !status.success() {
+   if !output.status.success() {
       return Err(Error::Discover(format!(
          "failed to realise age plugins: {}",
-         missing.join(", ")
+         installables.iter().cloned().collect::<Vec<_>>().join(", ")
       )));
    }
-   Ok(())
+   Ok(String::from_utf8_lossy(&output.stdout)
+      .lines()
+      .map(|out| Path::new(out).join("bin"))
+      .collect())
 }
 
 fn tail(text: &str) -> String {
@@ -268,19 +268,11 @@ fn tail(text: &str) -> String {
 mod tests {
    use super::*;
 
-   fn eval(system: &str, dirs: &[&str]) -> HostEval {
+   fn eval(system: &str, installables: &[&str]) -> HostEval {
       HostEval {
          plan:    serde_json::Value::Null,
          system:  system.into(),
-         plugins: dirs
-            .iter()
-            .map(|dir| {
-               PluginEval {
-                  dir: dir.into(),
-                  drv: format!("{dir}.drv").into(),
-               }
-            })
-            .collect(),
+         plugins: installables.iter().map(|&installable| installable.into()).collect(),
       }
    }
 
@@ -288,19 +280,19 @@ mod tests {
    fn plugin_union_filters_by_local_system() {
       let system = current_system();
       let evals = [
-         eval(&system, &["/nix/store/a", "/nix/store/b"]),
-         eval(&system, &["/nix/store/b", "/nix/store/c"]),
-         eval("other-system", &["/nix/store/foreign"]),
+         eval(&system, &["/nix/store/a.drv^out", "/nix/store/b.drv^out"]),
+         eval(&system, &["/nix/store/b.drv^out", "/nix/store/c.drv.drv^out^out"]),
+         eval("other-system", &["/nix/store/foreign.drv^out"]),
       ];
-      let dirs: BTreeSet<PathBuf> = plugin_union(&evals)
-         .into_iter()
-         .map(|plugin| plugin.dir)
-         .collect();
-      let expected: BTreeSet<PathBuf> = ["/nix/store/a", "/nix/store/b", "/nix/store/c"]
-         .iter()
-         .map(PathBuf::from)
-         .collect();
-      assert_eq!(dirs, expected);
+      let expected: BTreeSet<String> = [
+         "/nix/store/a.drv^out",
+         "/nix/store/b.drv^out",
+         "/nix/store/c.drv.drv^out^out",
+      ]
+      .iter()
+      .map(|&installable| installable.into())
+      .collect();
+      assert_eq!(plugin_union(&evals), expected);
    }
 
    #[test]
